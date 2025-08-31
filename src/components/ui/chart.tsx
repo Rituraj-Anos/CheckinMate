@@ -103,33 +103,40 @@ ${colorConfig
 
 const ChartTooltip = RechartsPrimitive.Tooltip;
 
-// Update: Explicitly type `payload` as any[]
-interface ChartTooltipContentProps
-  extends React.ComponentProps<typeof RechartsPrimitive.Tooltip>,
-    React.ComponentProps<"div"> {
+// ChartTooltipContent with inline props to prevent TypeScript conflicts
+function ChartTooltipContent(props: {
+  active?: boolean;
+  payload?: any[];
+  className?: string;
+  indicator?: "line" | "dot" | "dashed";
   hideLabel?: boolean;
   hideIndicator?: boolean;
-  indicator?: "line" | "dot" | "dashed";
+  label?: any;
+  labelFormatter?: any;
+  labelClassName?: string;
+  formatter?: any;
+  color?: string;
   nameKey?: string;
   labelKey?: string;
-  payload?: any[];
-}
+  [key: string]: any;
+}) {
+  const {
+    active,
+    payload,
+    className,
+    indicator = "dot",
+    hideLabel = false,
+    hideIndicator = false,
+    label,
+    labelFormatter,
+    labelClassName,
+    formatter,
+    color,
+    nameKey,
+    labelKey,
+    // ...rest
+  } = props;
 
-function ChartTooltipContent({
-  active,
-  payload,
-  className,
-  indicator = "dot",
-  hideLabel = false,
-  hideIndicator = false,
-  label,
-  labelFormatter,
-  labelClassName,
-  formatter,
-  color,
-  nameKey,
-  labelKey,
-}: ChartTooltipContentProps) {
   const { config } = useChart();
 
   const tooltipLabel = React.useMemo(() => {
@@ -254,22 +261,22 @@ function ChartTooltipContent({
 
 const ChartLegend = RechartsPrimitive.Legend;
 
-// Update: Explicitly type `payload` as any[]
-interface ChartLegendContentProps
-  extends React.ComponentProps<"div">,
-    Pick<RechartsPrimitive.LegendProps, "payload" | "verticalAlign"> {
+// ChartLegendContent with inline props to prevent TypeScript conflicts
+function ChartLegendContent(props: {
+  className?: string;
   hideIcon?: boolean;
-  nameKey?: string;
   payload?: any[];
-}
-
-function ChartLegendContent({
-  className,
-  hideIcon = false,
-  payload,
-  verticalAlign = "bottom",
-  nameKey,
-}: ChartLegendContentProps) {
+  verticalAlign?: "bottom" | "top";
+  nameKey?: string;
+  [key: string]: any;
+}) {
+  const {
+    className,
+    hideIcon = false,
+    payload,
+    verticalAlign = "bottom",
+    nameKey,
+  } = props;
   const { config } = useChart();
 
   if (!payload?.length) {
