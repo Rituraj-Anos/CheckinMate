@@ -1,7 +1,8 @@
-# Student Attendance System
+# CheckinMate
 
 A realtime student attendance app built with [Next.js](https://nextjs.org) and [Firebase Firestore](https://firebase.google.com/products/firestore).  
-Designed for hackathons to quickly add, edit, and track student attendance using RFID tags.
+Designed for hackathons to quickly add, edit, and track student attendance using RFID tags.  
+Featuring RFID support and Firestore integration. Built with Next.js and Firebase.
 
 ## Getting Started
 
