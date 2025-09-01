@@ -11,7 +11,7 @@ export default function Footer() {
           {/* Links Section */}
           <div className="flex flex-col gap-4 sm:flex-row sm:gap-8">
             <Link
-              href="https://github.com/checkinmate/dashboard"
+              href="https://github.com/Rituraj-Anos/CheckinMate"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground hover:underline"
