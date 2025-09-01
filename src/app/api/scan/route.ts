@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { db } from "../../../lib/firebase";
 
 // In-memory list of SSE controllers
 const clients: {
