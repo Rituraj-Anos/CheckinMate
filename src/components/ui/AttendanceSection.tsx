@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -28,7 +30,14 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Download, Edit2, Trash2, UserPlus, Users } from "lucide-react";
+import {
+  Download,
+  Edit2,
+  Trash2,
+  UserPlus,
+  Users,
+  LoaderCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 
 interface Student {
@@ -40,6 +49,13 @@ interface Student {
   status: "present" | "absent" | "late";
 }
 
+interface ScanLog {
+  uid: string;
+  action: "check-in" | "check-out";
+  timestamp: number;
+  late?: boolean;
+}
+
 interface AttendanceSectionProps {
   className?: string;
 }
@@ -49,58 +65,109 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+  const [studentToEdit, setStudentToEdit] = useState<Student | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", rfid: "" });
   const [exporting, setExporting] = useState(false);
+  const [checkingIn, setCheckingIn] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [editing, setEditing] = useState(false);
+
+  const todayDate = useMemo(() => {
+    const now = new Date();
+    return [
+      now.getFullYear().toString().padStart(4, "0"),
+      (now.getMonth() + 1).toString().padStart(2, "0"),
+      now.getDate().toString().padStart(2, "0"),
+    ].join("-");
+  }, []);
+
+  const fetchAttendance = async () => {
+    setLoading(true);
+    try {
+      const { collection, getDocs } = await import("firebase/firestore");
+      const { db } = await import("@/lib/firebase");
+
+      if (!db) {
+        throw new Error("Firebase not initialized");
+      }
+
+      const studentSnapshot = await getDocs(collection(db, "students"));
+      const studentList = studentSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          rfid: data.rfid || "",
+          name: data.name || "Unknown",
+        };
+      });
+
+      const scansSnapshot = await getDocs(collection(db, "scans"));
+      const scanLogs: ScanLog[] = scansSnapshot.docs
+        .map((doc) => {
+          const data = doc.data();
+          return {
+            uid: data.uid || "",
+            action: data.action || "check-in",
+            timestamp: data.timestamp || Date.now(),
+            late: data.late || false,
+          };
+        })
+        .filter((log) => {
+          const logDate = new Date(log.timestamp);
+          const y = logDate.getFullYear();
+          const m = (logDate.getMonth() + 1).toString().padStart(2, "0");
+          const d = logDate.getDate().toString().padStart(2, "0");
+          const logDay = `${y}-${m}-${d}`;
+          return logDay === todayDate;
+        });
+
+      const studentsWithAttendance: Student[] = studentList.map((student) => {
+        const studentLogs = scanLogs.filter(
+          (scan) => scan.uid === student.rfid
+        );
+        const checkIn = studentLogs.find((s) => s.action === "check-in");
+        const checkOut = studentLogs.find((s) => s.action === "check-out");
+
+        let status: Student["status"] = "absent";
+        if (checkIn && checkIn.late) status = "late";
+        else if (checkIn) status = "present";
+
+        return {
+          ...student,
+          checkInTime: checkIn
+            ? new Date(checkIn.timestamp).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : undefined,
+          checkOutTime: checkOut
+            ? new Date(checkOut.timestamp).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : undefined,
+          status,
+        };
+      });
+
+      setStudents(studentsWithAttendance);
+    } catch (error) {
+      console.error("Error fetching attendance:", error);
+      toast.error("Failed to load attendance data");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchStudents = async () => {
-      setLoading(true);
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        const mockStudents: Student[] = [
-          {
-            id: "1",
-            rfid: "RFID001",
-            name: "Alice Johnson",
-            checkInTime: "08:30 AM",
-            checkOutTime: "04:15 PM",
-            status: "present",
-          },
-          {
-            id: "2",
-            rfid: "RFID002",
-            name: "Bob Smith",
-            checkInTime: "09:15 AM",
-            status: "late",
-          },
-          {
-            id: "3",
-            rfid: "RFID003",
-            name: "Charlie Brown",
-            status: "absent",
-          },
-          {
-            id: "4",
-            rfid: "RFID004",
-            name: "Diana Prince",
-            checkInTime: "08:25 AM",
-            checkOutTime: "04:30 PM",
-            status: "present",
-          },
-        ];
-        setStudents(mockStudents);
-      } catch (error) {
-        toast.error("Failed to load attendance data");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchStudents();
-  }, []);
+    fetchAttendance();
+  }, [todayDate]);
 
   const filteredStudents = useMemo(() => {
     if (statusFilter === "all") return students;
-    return students.filter((student) => student.status === statusFilter);
+    return students.filter((s) => s.status === statusFilter);
   }, [students, statusFilter]);
 
   const handleExportCSV = async () => {
@@ -121,15 +188,13 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `attendance-${
-        new Date().toISOString().split("T")[0]
-      }.csv`;
+      link.download = `attendance-${todayDate}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       toast.success("Attendance data exported successfully!");
-    } catch (error) {
+    } catch {
       toast.error("Failed to export attendance data");
     } finally {
       setExporting(false);
@@ -137,32 +202,85 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
   };
 
   const handleCheckIn = async (student: Student) => {
+    setCheckingIn(student.id);
     try {
-      const updatedStudents = students.map((s) =>
-        s.id === student.id
-          ? {
-              ...s,
-              status: "present" as const,
-              checkInTime: new Date().toLocaleTimeString(),
-            }
-          : s
-      );
-      setStudents(updatedStudents);
-      toast.success(`${student.name} checked in successfully!`);
+      const response = await fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: student.rfid, action: "check-in" }),
+      });
+
+      const result = await response.json();
+
+      if (result.ok) {
+        toast.success(
+          `${student.name} checked in successfully!${
+            result.suspicious ? " (Flagged as suspicious!)" : ""
+          }${result.late ? " (Marked as late!)" : ""}`
+        );
+        await fetchAttendance();
+      } else {
+        toast.error(`Failed to check in: ${result.error || "Unknown error"}`);
+      }
     } catch (error) {
-      toast.error("Failed to check in student");
+      toast.error("Network error during check-in");
+    } finally {
+      setCheckingIn(null);
     }
   };
 
   const handleEdit = (student: Student) => {
-    if (typeof window !== "undefined" && (window as any).editStudent) {
-      (window as any).editStudent(student.id);
-    } else {
-      window.dispatchEvent(
-        new CustomEvent("editStudent", { detail: { studentId: student.id } })
-      );
+    setStudentToEdit(student);
+    setEditForm({ name: student.name, rfid: student.rfid });
+    setEditModalOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!studentToEdit || !editForm.name.trim() || !editForm.rfid.trim()) {
+      toast.error("Please fill in all fields");
+      return;
     }
-    toast.info(`Opening edit form for ${student.name}`);
+
+    setEditing(true);
+    try {
+      const { doc, updateDoc, collection, getDocs, query, where } =
+        await import("firebase/firestore");
+      const { db } = await import("@/lib/firebase");
+
+      if (!db) {
+        throw new Error("Firebase not initialized");
+      }
+
+      // Update student record
+      await updateDoc(doc(db, "students", studentToEdit.id), {
+        name: editForm.name.trim(),
+        rfid: editForm.rfid.trim(),
+      });
+
+      // If RFID changed, update all scan records
+      if (editForm.rfid !== studentToEdit.rfid) {
+        const scansQuery = query(
+          collection(db, "scans"),
+          where("uid", "==", studentToEdit.rfid)
+        );
+        const scansSnapshot = await getDocs(scansQuery);
+
+        const updatePromises = scansSnapshot.docs.map((scanDoc) =>
+          updateDoc(scanDoc.ref, { uid: editForm.rfid.trim() })
+        );
+        await Promise.all(updatePromises);
+      }
+
+      toast.success(`${editForm.name} updated successfully!`);
+      await fetchAttendance();
+    } catch (error) {
+      console.error("Error updating student:", error);
+      toast.error("Failed to update student");
+    } finally {
+      setEditing(false);
+      setEditModalOpen(false);
+      setStudentToEdit(null);
+    }
   };
 
   const handleDeleteClick = (student: Student) => {
@@ -172,15 +290,37 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
 
   const handleDeleteConfirm = async () => {
     if (!studentToDelete) return;
+
+    setDeleting(true);
     try {
-      if (typeof window !== "undefined" && (window as any).deleteStudent) {
-        await (window as any).deleteStudent(studentToDelete.id);
+      const { collection, getDocs, deleteDoc, doc, query, where } =
+        await import("firebase/firestore");
+      const { db } = await import("@/lib/firebase");
+
+      if (!db) {
+        throw new Error("Firebase not initialized");
       }
-      setStudents((prev) => prev.filter((s) => s.id !== studentToDelete.id));
+
+      await deleteDoc(doc(db, "students", studentToDelete.id));
+
+      const scansQuery = query(
+        collection(db, "scans"),
+        where("uid", "==", studentToDelete.rfid)
+      );
+      const scansSnapshot = await getDocs(scansQuery);
+
+      const deletePromises = scansSnapshot.docs.map((scanDoc) =>
+        deleteDoc(scanDoc.ref)
+      );
+      await Promise.all(deletePromises);
+
       toast.success(`${studentToDelete.name} has been removed from the system`);
+      await fetchAttendance();
     } catch (error) {
+      console.error("Error deleting student:", error);
       toast.error("Failed to delete student");
     } finally {
+      setDeleting(false);
       setDeleteModalOpen(false);
       setStudentToDelete(null);
     }
@@ -330,9 +470,17 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
                               size="sm"
                               variant="outline"
                               onClick={() => handleCheckIn(student)}
+                              disabled={checkingIn === student.id}
                               className="h-8 px-3"
                             >
-                              Check In
+                              {checkingIn === student.id ? (
+                                <>
+                                  <LoaderCircle className="mr-2 h-3 w-3 animate-spin" />
+                                  Checking In...
+                                </>
+                              ) : (
+                                "Check In"
+                              )}
                             </Button>
                           )}
                           <Button
@@ -365,6 +513,68 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Dialog */}
+      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Student</DialogTitle>
+            <DialogDescription>
+              Update the student information below.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input
+                id="edit-name"
+                value={editForm.name}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, name: e.target.value })
+                }
+                placeholder="Enter student name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-rfid">RFID</Label>
+              <Input
+                id="edit-rfid"
+                value={editForm.rfid}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, rfid: e.target.value })
+                }
+                placeholder="Enter RFID"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditModalOpen(false)}
+              disabled={editing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleEditSave}
+              disabled={
+                editing || !editForm.name.trim() || !editForm.rfid.trim()
+              }
+            >
+              {editing ? (
+                <>
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Dialog */}
       <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
         <DialogContent>
           <DialogHeader>
@@ -376,11 +586,26 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteModalOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteModalOpen(false)}
+              disabled={deleting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleDeleteConfirm}>
-              Delete Student
+            <Button
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <>
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete Student"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
