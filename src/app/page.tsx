@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { SidebarProvider, Sidebar, SidebarTrigger } from "@/components/Sidebar";
+import Sidebar from "@/components/Sidebar";
 import TopHeader from "@/components/TopHeader";
 import DashboardSection from "@/components/ui/DashboardSection";
 import AttendanceSection from "@/components/ui/AttendanceSection";
@@ -11,6 +11,7 @@ import Footer from "@/components/Footer";
 
 export default function Page() {
   const [activeSection, setActiveSection] = useState("dashboard");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     const handleSidebarNavigation = (event: CustomEvent) => {
@@ -48,6 +49,20 @@ export default function Page() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        setIsSidebarCollapsed(true);
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      handleResize();
+      window.addEventListener("resize", handleResize);
+      return () => window.removeEventListener("resize", handleResize);
+    }
+  }, []);
+
   const renderActiveSection = () => {
     switch (activeSection) {
       case "attendance":
@@ -62,20 +77,25 @@ export default function Page() {
   };
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen bg-background flex">
-        <div className="md:hidden fixed top-2 left-2 z-[100]">
-          <SidebarTrigger />
-        </div>
+    <div className="min-h-screen bg-background flex">
+      {/* Sidebar */}
+      <div className="hidden md:block fixed left-0 top-0 z-40">
         <Sidebar />
-        <div className="flex-1 flex flex-col md:ml-64 min-h-screen">
-          <TopHeader />
-          <main className="flex-1 px-4 md:px-6 lg:px-8 py-6">
-            <div className="max-w-7xl mx-auto">{renderActiveSection()}</div>
-          </main>
-          <Footer />
-        </div>
       </div>
-    </SidebarProvider>
+
+      {/* Mobile Sidebar Overlay */}
+      <div className="md:hidden fixed left-0 top-0 z-50">
+        <Sidebar />
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col md:ml-64 min-h-screen">
+        <TopHeader />
+        <main className="flex-1 px-4 md:px-6 lg:px-8 py-6">
+          <div className="max-w-7xl mx-auto">{renderActiveSection()}</div>
+        </main>
+        <Footer />
+      </div>
+    </div>
   );
 }

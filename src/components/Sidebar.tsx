@@ -1,119 +1,209 @@
 "use client";
-import * as React from "react";
-import { PanelLeftIcon } from "lucide-react";
 
-// Sidebar Context
-type SidebarContextProps = {
-  state: "expanded" | "collapsed";
-  open: boolean;
-  setOpen: (open: boolean) => void;
-  openMobile: boolean;
-  setOpenMobile: (open: boolean) => void;
-  isMobile: boolean;
-  toggleSidebar: () => void;
-};
+import React, { useState, useEffect } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { PanelLeftClose, PanelLeftOpen, ChevronLeft } from "lucide-react";
 
-const SidebarContext = React.createContext<SidebarContextProps | null>(null);
-
-function useSidebar() {
-  const context = React.useContext(SidebarContext);
-  if (!context)
-    throw new Error("useSidebar must be used within a SidebarProvider.");
-  return context;
+interface SidebarProps {
+  className?: string;
 }
 
-function SidebarProvider({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = React.useState(true);
-  const [openMobile, setOpenMobile] = React.useState(false);
+const Sidebar: React.FC<SidebarProps> = ({ className = "" }) => {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [activeSection, setActiveSection] = useState("dashboard");
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
-  const [isMobile, setIsMobile] = React.useState(false);
-  React.useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+  useEffect(() => {
+    const savedCollapsed = localStorage.getItem("sidebar-collapsed");
+    const savedSection = localStorage.getItem("sidebar-active-section");
+    if (savedCollapsed !== null) {
+      setIsCollapsed(JSON.parse(savedCollapsed));
+    }
+    if (savedSection) {
+      setActiveSection(savedSection);
+    }
   }, []);
 
-  const toggleSidebar = () =>
-    isMobile ? setOpenMobile((prev) => !prev) : setOpen((prev) => !prev);
-
-  React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "b" && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault();
-        toggleSidebar();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleSidebar]);
-
-  const state = open ? "expanded" : "collapsed";
-  const contextValue: SidebarContextProps = {
-    state,
-    open,
-    setOpen,
-    openMobile,
-    setOpenMobile,
-    isMobile,
-    toggleSidebar,
+  const toggleCollapsed = () => {
+    const newCollapsed = !isCollapsed;
+    setIsCollapsed(newCollapsed);
+    localStorage.setItem("sidebar-collapsed", JSON.stringify(newCollapsed));
   };
 
-  return (
-    <SidebarContext.Provider value={contextValue}>
-      {children}
-    </SidebarContext.Provider>
-  );
-}
+  const handleNavClick = (section: string) => {
+    setActiveSection(section);
+    localStorage.setItem("sidebar-active-section", section);
+    // Emit custom event for parent components to listen to
+    const event = new CustomEvent("sidebar-navigation", {
+      detail: { section },
+    });
+    window.dispatchEvent(event);
+    window.location.hash = section;
+  };
 
-function Sidebar() {
-  const { isMobile, openMobile, setOpenMobile, open } = useSidebar();
-  return isMobile ? (
-    openMobile ? (
-      <aside
-        className="fixed inset-0 z-50 bg-black/50 flex"
-        onClick={() => setOpenMobile(false)}
-      >
-        <nav
-          className="bg-white h-full w-64 shadow-2xl p-4"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="font-bold mb-6">CheckinMate Menu</div>
-          <ul className="space-y-4">
-            <li>Dashboard</li>
-            <li>Attendance Details</li>
-            <li>Live Logger</li>
-            <li>Add Student</li>
-          </ul>
-        </nav>
-      </aside>
-    ) : null
-  ) : (
-    open && (
-      <nav className="fixed top-0 left-0 z-40 bg-white md:w-64 w-0 h-full shadow-xl p-4 hidden md:block">
-        <div className="font-bold mb-6">CheckinMate Menu</div>
-        <ul className="space-y-4">
-          <li>Dashboard</li>
-          <li>Attendance Details</li>
-          <li>Live Logger</li>
-          <li>Add Student</li>
-        </ul>
-      </nav>
-    )
-  );
-}
+  const navItems = [
+    { id: "dashboard", label: "Dashboard", icon: "📊" },
+    { id: "attendance", label: "Attendance Details", icon: "📝" },
+    { id: "logger", label: "Live Logger", icon: "🔴" },
+    { id: "students", label: "Add Student", icon: "👤" },
+  ];
 
-function SidebarTrigger() {
-  const { toggleSidebar } = useSidebar();
+  const profileMenuItems = [
+    { label: "Profile", action: () => console.log("Profile clicked") },
+    { label: "Settings", action: () => console.log("Settings clicked") },
+    { label: "Sign out", action: () => console.log("Sign out clicked") },
+  ];
+
   return (
-    <button
-      className="bg-white p-2 rounded-full shadow border flex items-center justify-center"
-      onClick={toggleSidebar}
-      aria-label="Toggle Sidebar"
+    <Card
+      className={`
+        ${className}
+        h-screen bg-sidebar border-sidebar-border shadow-lg rounded-r-lg rounded-l-none
+        flex flex-col transition-all duration-300 ease-in-out
+        ${isCollapsed ? "w-20" : "w-64"}
+      `}
+      role="navigation"
+      aria-label="Main navigation"
     >
-      <PanelLeftIcon className="h-6 w-6" />
-    </button>
-  );
-}
+      {/* Brand Row */}
+      <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
+        <div className="flex items-center space-x-3 min-w-0">
+          <div
+            className="text-2xl flex-shrink-0"
+            role="img"
+            aria-label="CheckinMate logo"
+          >
+            🔐
+          </div>
+          {!isCollapsed && (
+            <h1 className="font-display font-bold text-lg text-sidebar-primary truncate">
+              CheckinMate
+            </h1>
+          )}
+        </div>
 
-export { SidebarProvider, Sidebar, SidebarTrigger, useSidebar };
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleCollapsed}
+          className="flex-shrink-0 h-8 w-8 p-0 hover:bg-sidebar-accent"
+          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!isCollapsed}
+        >
+          {isCollapsed ? (
+            <PanelLeftOpen className="h-4 w-4 text-sidebar-foreground" />
+          ) : (
+            <PanelLeftClose className="h-4 w-4 text-sidebar-foreground" />
+          )}
+        </Button>
+      </div>
+
+      {/* Navigation Links */}
+      <nav className="flex-1 p-2" role="list">
+        {navItems.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => handleNavClick(item.id)}
+            className={`
+              w-full flex items-center space-x-3 p-3 mb-1 rounded-lg text-left
+              transition-all duration-200 ease-in-out
+              hover:bg-sidebar-accent focus:outline-none focus:ring-2 focus:ring-sidebar-ring
+              ${
+                activeSection === item.id
+                  ? "bg-accent text-accent-foreground font-medium"
+                  : "text-sidebar-foreground hover:text-sidebar-primary"
+              }
+            `}
+            role="listitem"
+            aria-current={activeSection === item.id ? "page" : undefined}
+          >
+            <span
+              className="text-lg flex-shrink-0"
+              role="img"
+              aria-hidden="true"
+            >
+              {item.icon}
+            </span>
+            {!isCollapsed && (
+              <span className="font-medium truncate">{item.label}</span>
+            )}
+          </button>
+        ))}
+      </nav>
+
+      {/* Profile Card */}
+      <div className="p-4 border-t border-sidebar-border">
+        <Popover open={isProfileMenuOpen} onOpenChange={setIsProfileMenuOpen}>
+          <PopoverTrigger asChild>
+            <button
+              className={`
+                w-full flex items-center space-x-3 p-3 rounded-lg text-left
+                transition-all duration-200 ease-in-out
+                hover:bg-sidebar-accent focus:outline-none focus:ring-2 focus:ring-sidebar-ring
+                ${isCollapsed ? "justify-center" : ""}
+              `}
+              aria-label="User menu"
+              aria-expanded={isProfileMenuOpen}
+            >
+              <Avatar className="h-8 w-8 flex-shrink-0">
+                <AvatarImage src="/api/placeholder/32/32" alt="Admin User" />
+                <AvatarFallback className="bg-primary text-primary-foreground font-medium">
+                  AU
+                </AvatarFallback>
+              </Avatar>
+
+              {!isCollapsed && (
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sidebar-primary truncate">
+                    Admin User
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    Team Manager
+                  </div>
+                </div>
+              )}
+
+              {!isCollapsed && (
+                <ChevronLeft
+                  className={`h-4 w-4 text-sidebar-foreground transition-transform duration-200 ${
+                    isProfileMenuOpen ? "rotate-90" : "-rotate-90"
+                  }`}
+                />
+              )}
+            </button>
+          </PopoverTrigger>
+
+          <PopoverContent
+            className="w-56 p-2"
+            align={isCollapsed ? "end" : "start"}
+            side="top"
+          >
+            <div className="space-y-1">
+              {profileMenuItems.map((item, index) => (
+                <button
+                  key={index}
+                  onClick={() => {
+                    item.action();
+                    setIsProfileMenuOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors duration-150"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+    </Card>
+  );
+};
+
+export default Sidebar;
