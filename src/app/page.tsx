@@ -8,23 +8,24 @@ import AttendanceSection from "@/components/ui/AttendanceSection";
 import LoggerSection from "@/components/ui/LoggerSection";
 import StudentsSection from "@/components/StudentsSection";
 import Footer from "@/components/Footer";
+import { Button } from "@/components/ui/button";
+import { Menu } from "lucide-react";
 
 export default function Page() {
   const [activeSection, setActiveSection] = useState("dashboard");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     const handleSidebarNavigation = (event: CustomEvent) => {
       setActiveSection(event.detail.section);
     };
-
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1);
       if (["dashboard", "attendance", "logger", "students"].includes(hash)) {
         setActiveSection(hash);
       }
     };
-
     if (typeof window !== "undefined") {
       const initialHash = window.location.hash.slice(1);
       if (
@@ -33,7 +34,6 @@ export default function Page() {
         setActiveSection(initialHash);
       }
     }
-
     window.addEventListener(
       "sidebar-navigation",
       handleSidebarNavigation as EventListener
@@ -51,11 +51,8 @@ export default function Page() {
 
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth < 768) {
-        setIsSidebarCollapsed(true);
-      }
+      setIsMobile(window.innerWidth < 768);
     };
-
     if (typeof window !== "undefined") {
       handleResize();
       window.addEventListener("resize", handleResize);
@@ -78,17 +75,30 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Sidebar */}
-      <div className="hidden md:block fixed left-0 top-0 z-40">
-        <Sidebar />
-      </div>
+      {/* Desktop sidebar (fixed left) */}
+      {!isMobile && (
+        <div className="hidden md:block fixed left-0 top-0 z-40">
+          <Sidebar />
+        </div>
+      )}
 
-      {/* Mobile Sidebar Overlay */}
-      <div className="md:hidden fixed left-0 top-0 z-50">
-        <Sidebar />
-      </div>
+      {/* Hamburger menu & Mobile Sheet trigger */}
+      {isMobile && (
+        <>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="fixed top-4 left-4 z-[100] p-2 rounded-full shadow bg-white"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open menu"
+          >
+            <Menu className="h-6 w-6" />
+          </Button>
+          <Sidebar mobile open={sidebarOpen} setOpen={setSidebarOpen} />
+        </>
+      )}
 
-      {/* Main Content Area */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col md:ml-64 min-h-screen">
         <TopHeader />
         <main className="flex-1 px-4 md:px-6 lg:px-8 py-6">

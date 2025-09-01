@@ -9,27 +9,38 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { PanelLeftClose, PanelLeftOpen, ChevronLeft } from "lucide-react";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { PanelLeftClose, PanelLeftOpen, ChevronLeft, Menu } from "lucide-react";
 
 interface SidebarProps {
   className?: string;
+  mobile?: boolean;
+  open?: boolean;
+  setOpen?: (open: boolean) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ className = "" }) => {
+const Sidebar: React.FC<SidebarProps> = ({
+  className = "",
+  mobile = false,
+  open,
+  setOpen,
+}) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeSection, setActiveSection] = useState("dashboard");
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   useEffect(() => {
-    const savedCollapsed = localStorage.getItem("sidebar-collapsed");
-    const savedSection = localStorage.getItem("sidebar-active-section");
-    if (savedCollapsed !== null) {
-      setIsCollapsed(JSON.parse(savedCollapsed));
+    if (!mobile) {
+      const savedCollapsed = localStorage.getItem("sidebar-collapsed");
+      const savedSection = localStorage.getItem("sidebar-active-section");
+      if (savedCollapsed !== null) {
+        setIsCollapsed(JSON.parse(savedCollapsed));
+      }
+      if (savedSection) {
+        setActiveSection(savedSection);
+      }
     }
-    if (savedSection) {
-      setActiveSection(savedSection);
-    }
-  }, []);
+  }, [mobile]);
 
   const toggleCollapsed = () => {
     const newCollapsed = !isCollapsed;
@@ -40,12 +51,12 @@ const Sidebar: React.FC<SidebarProps> = ({ className = "" }) => {
   const handleNavClick = (section: string) => {
     setActiveSection(section);
     localStorage.setItem("sidebar-active-section", section);
-    // Emit custom event for parent components to listen to
     const event = new CustomEvent("sidebar-navigation", {
       detail: { section },
     });
     window.dispatchEvent(event);
     window.location.hash = section;
+    if (mobile && setOpen) setOpen(false); // close sheet on mobile nav
   };
 
   const navItems = [
@@ -61,13 +72,13 @@ const Sidebar: React.FC<SidebarProps> = ({ className = "" }) => {
     { label: "Sign out", action: () => console.log("Sign out clicked") },
   ];
 
-  return (
+  const sidebarUi = (
     <Card
       className={`
-        ${className}
-        h-screen bg-sidebar border-sidebar-border shadow-lg rounded-r-lg rounded-l-none
-        flex flex-col transition-all duration-300 ease-in-out
-        ${isCollapsed ? "w-20" : "w-64"}
+      ${className}
+      h-screen bg-sidebar border-sidebar-border shadow-lg rounded-r-lg rounded-l-none
+      flex flex-col transition-all duration-300 ease-in-out
+      ${mobile ? "w-[80vw] max-w-xs" : isCollapsed ? "w-20" : "w-64"}
       `}
       role="navigation"
       aria-label="Main navigation"
@@ -88,23 +99,23 @@ const Sidebar: React.FC<SidebarProps> = ({ className = "" }) => {
             </h1>
           )}
         </div>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={toggleCollapsed}
-          className="flex-shrink-0 h-8 w-8 p-0 hover:bg-sidebar-accent"
-          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!isCollapsed}
-        >
-          {isCollapsed ? (
-            <PanelLeftOpen className="h-4 w-4 text-sidebar-foreground" />
-          ) : (
-            <PanelLeftClose className="h-4 w-4 text-sidebar-foreground" />
-          )}
-        </Button>
+        {!mobile && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleCollapsed}
+            className="flex-shrink-0 h-8 w-8 p-0 hover:bg-sidebar-accent"
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!isCollapsed}
+          >
+            {isCollapsed ? (
+              <PanelLeftOpen className="h-4 w-4 text-sidebar-foreground" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4 text-sidebar-foreground" />
+            )}
+          </Button>
+        )}
       </div>
-
       {/* Navigation Links */}
       <nav className="flex-1 p-2" role="list">
         {navItems.map((item) => (
@@ -137,7 +148,6 @@ const Sidebar: React.FC<SidebarProps> = ({ className = "" }) => {
           </button>
         ))}
       </nav>
-
       {/* Profile Card */}
       <div className="p-4 border-t border-sidebar-border">
         <Popover open={isProfileMenuOpen} onOpenChange={setIsProfileMenuOpen}>
@@ -158,7 +168,6 @@ const Sidebar: React.FC<SidebarProps> = ({ className = "" }) => {
                   AU
                 </AvatarFallback>
               </Avatar>
-
               {!isCollapsed && (
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sidebar-primary truncate">
@@ -169,7 +178,6 @@ const Sidebar: React.FC<SidebarProps> = ({ className = "" }) => {
                   </div>
                 </div>
               )}
-
               {!isCollapsed && (
                 <ChevronLeft
                   className={`h-4 w-4 text-sidebar-foreground transition-transform duration-200 ${
@@ -179,7 +187,6 @@ const Sidebar: React.FC<SidebarProps> = ({ className = "" }) => {
               )}
             </button>
           </PopoverTrigger>
-
           <PopoverContent
             className="w-56 p-2"
             align={isCollapsed ? "end" : "start"}
@@ -204,6 +211,20 @@ const Sidebar: React.FC<SidebarProps> = ({ className = "" }) => {
       </div>
     </Card>
   );
+
+  if (mobile && typeof setOpen === "function" && typeof open === "boolean") {
+    return (
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent
+          side="left"
+          className="p-0 max-w-xs bg-sidebar overflow-x-hidden"
+        >
+          {React.cloneElement(sidebarUi, { mobile: true })}
+        </SheetContent>
+      </Sheet>
+    );
+  }
+  return sidebarUi;
 };
 
 export default Sidebar;
