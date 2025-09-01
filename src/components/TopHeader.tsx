@@ -2,18 +2,23 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { SunMoon } from "lucide-react";
+import { SunMoon, Menu } from "lucide-react";
 
 interface TopHeaderProps {
   className?: string;
+  isMobile?: boolean;
+  onMenuClick?: () => void;
 }
 
-export default function TopHeader({ className }: TopHeaderProps) {
+export default function TopHeader({
+  className,
+  isMobile = false,
+  onMenuClick,
+}: TopHeaderProps) {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [currentSection, setCurrentSection] = useState("Dashboard");
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
-  // Initialize theme from localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedTheme = localStorage.getItem("theme") as
@@ -33,7 +38,6 @@ export default function TopHeader({ className }: TopHeaderProps) {
     }
   }, []);
 
-  // Live clock update
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
@@ -42,7 +46,6 @@ export default function TopHeader({ className }: TopHeaderProps) {
     return () => clearInterval(timer);
   }, []);
 
-  // Listen for navigation changes
   useEffect(() => {
     const handleNavigationChange = (event: CustomEvent) => {
       setCurrentSection(event.detail.section || "Dashboard");
@@ -75,7 +78,6 @@ export default function TopHeader({ className }: TopHeaderProps) {
       );
       window.addEventListener("hashchange", handleHashChange);
 
-      // Set initial section based on hash
       handleHashChange();
     }
 
@@ -98,7 +100,6 @@ export default function TopHeader({ className }: TopHeaderProps) {
       document.documentElement.classList.toggle("dark", newTheme === "dark");
       localStorage.setItem("theme", newTheme);
 
-      // Dispatch custom event for charts to re-render
       window.dispatchEvent(
         new CustomEvent("theme-change", {
           detail: { theme: newTheme },
@@ -127,14 +128,27 @@ export default function TopHeader({ className }: TopHeaderProps) {
   return (
     <header
       className={`
-        sticky top-0 z-50 h-16 w-full 
+        sticky top-0 z-50 h-16 w-full
         bg-card/95 backdrop-blur-md border-b border-border/50
-        flex items-center justify-between px-6
+        flex items-center px-4 md:px-6
         transition-all duration-200 ease-out
         ${className || ""}
       `}
     >
-      {/* Left: Current Section Title */}
+      {/* Mobile hamburger button to left */}
+      {isMobile && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onMenuClick}
+          className="mr-2 p-2 rounded-full bg-white shadow"
+          aria-label="Open menu"
+        >
+          <Menu className="h-6 w-6" />
+        </Button>
+      )}
+
+      {/* Section Title */}
       <div className="flex-1">
         <h1
           className="
@@ -150,7 +164,6 @@ export default function TopHeader({ className }: TopHeaderProps) {
 
       {/* Right: Clock, Date & Theme Toggle */}
       <div className="flex items-center gap-4">
-        {/* Clock and Date */}
         <div className="text-right select-none">
           <div className="text-sm font-mono font-medium text-foreground">
             {formatTime(currentTime)}
@@ -166,8 +179,8 @@ export default function TopHeader({ className }: TopHeaderProps) {
           size="sm"
           onClick={toggleTheme}
           className="
-            h-9 w-9 p-0 
-            hover:bg-accent/50 
+            h-9 w-9 p-0
+            hover:bg-accent/50
             transition-all duration-200 ease-out
           "
           aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}

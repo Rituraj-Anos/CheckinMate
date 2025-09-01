@@ -8,8 +8,6 @@ import AttendanceSection from "@/components/ui/AttendanceSection";
 import LoggerSection from "@/components/ui/LoggerSection";
 import StudentsSection from "@/components/StudentsSection";
 import Footer from "@/components/Footer";
-import { Button } from "@/components/ui/button";
-import { Menu } from "lucide-react";
 
 export default function Page() {
   const [activeSection, setActiveSection] = useState("dashboard");
@@ -82,25 +80,18 @@ export default function Page() {
         </div>
       )}
 
-      {/* Hamburger menu & Mobile Sheet trigger */}
+      {/* Mobile sidebar sheet */}
       {isMobile && (
-        <>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="fixed top-4 left-4 z-[100] p-2 rounded-full shadow bg-white"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open menu"
-          >
-            <Menu className="h-6 w-6" />
-          </Button>
-          <Sidebar mobile open={sidebarOpen} setOpen={setSidebarOpen} />
-        </>
+        <Sidebar mobile open={sidebarOpen} setOpen={setSidebarOpen} />
       )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col md:ml-64 min-h-screen">
-        <TopHeader />
+        {/* TopHeader now receives isMobile and sidebar trigger */}
+        <TopHeader
+          isMobile={isMobile}
+          onMenuClick={() => setSidebarOpen(true)}
+        />
         <main className="flex-1 px-4 md:px-6 lg:px-8 py-6">
           <div className="max-w-7xl mx-auto">{renderActiveSection()}</div>
         </main>
