@@ -24,12 +24,17 @@ const mockStudents = [
   { id: "STU005", name: "Emma Davis" },
 ];
 
+const CLASS_START_HOUR = 9;
+const CLASS_START_MINUTE = 45;
+
 interface LogEntry {
   id: string;
   timestamp: Date;
   studentId: string;
   studentName: string;
   action: "check-in" | "check-out";
+  suspicious?: boolean;
+  late?: boolean; // <-- new for late highlight
 }
 
 const LoggerSection = () => {
@@ -43,6 +48,52 @@ const LoggerSection = () => {
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [lastActivityTime, setLastActivityTime] = useState<Date | null>(null);
 
+  // Helper: check for late arrival (after 9:45 AM)
+  const isLate = (timestamp: Date, action: "check-in" | "check-out") => {
+    if (action !== "check-in") return false; // Only check-ins count
+    const classStart = new Date(timestamp);
+    classStart.setHours(CLASS_START_HOUR, CLASS_START_MINUTE, 0, 0);
+    // If timestamp is after today at class start time, and on same date
+    return (
+      timestamp.getHours() > CLASS_START_HOUR ||
+      (timestamp.getHours() === CLASS_START_HOUR &&
+        timestamp.getMinutes() > CLASS_START_MINUTE)
+    );
+  };
+
+  // Live scan event stream from API
+  useEffect(() => {
+    const evtSource = new EventSource("/api/scan");
+    evtSource.onmessage = (e) => {
+      try {
+        const { uid, action, timestamp, suspicious } = JSON.parse(e.data);
+        const student = mockStudents.find((s) => s.id === uid) || {
+          name: "Unknown Student",
+        };
+        const logTime = new Date(timestamp);
+        const newLog: LogEntry = {
+          id: String(timestamp),
+          timestamp: logTime,
+          studentId: uid,
+          studentName: student.name,
+          action,
+          suspicious,
+          late: isLate(logTime, action), // mark late if after 9:45
+        };
+        setLogs((prev) => [newLog, ...prev.slice(0, 19)]);
+        setLastScannedId(uid);
+        setLastActivityTime(new Date(timestamp));
+        toast.success(
+          `${student.name} ${
+            action === "check-in" ? "checked in" : "checked out"
+          } (LIVE)`
+        );
+      } catch {}
+    };
+    return () => evtSource.close();
+  }, []);
+
+  // Simulated detector status update
   useEffect(() => {
     const interval = setInterval(() => {
       if (lastActivityTime) {
@@ -54,20 +105,14 @@ const LoggerSection = () => {
   }, [lastActivityTime]);
 
   const generateRandomStudent = useCallback(() => {
-    if (typeof window !== "undefined" && (window as any).randomStudent) {
-      const randomId = (window as any).randomStudent();
-      setRfidInput(randomId);
-      setLastScannedId(randomId);
-      toast.success("Random student ID generated");
-    } else {
-      const randomStudent =
-        mockStudents[Math.floor(Math.random() * mockStudents.length)];
-      setRfidInput(randomStudent.id);
-      setLastScannedId(randomStudent.id);
-      toast.success("Random student ID generated");
-    }
+    const randomStudent =
+      mockStudents[Math.floor(Math.random() * mockStudents.length)];
+    setRfidInput(randomStudent.id);
+    setLastScannedId(randomStudent.id);
+    toast.success("Random student ID generated");
   }, []);
 
+  // Old logAttendance for manual/button use
   const logAttendance = useCallback(
     async (action: "check-in" | "check-out") => {
       if (!rfidInput.trim()) {
@@ -79,40 +124,38 @@ const LoggerSection = () => {
       setLoading(true);
 
       try {
-        if (typeof window !== "undefined" && (window as any).logAttendance) {
-          await (window as any).logAttendance(rfidInput, action);
-        } else {
-          const event = new CustomEvent("logAttendance", {
-            detail: { rfidId: rfidInput, action },
-          });
-          window.dispatchEvent(event);
-        }
-        const student =
-          mockStudents.find((s) => s.id === rfidInput) || {
-            name: "Unknown Student",
-          };
-
+        // Post to /api/scan for live logging (sends to all connected)
+        const res = await fetch("/api/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid: rfidInput, action }),
+        });
+        if (!res.ok) throw new Error("Failed to send scan");
+        // For immediate feedback, also add locally:
+        const student = mockStudents.find((s) => s.id === rfidInput) || {
+          name: "Unknown Student",
+        };
+        const now = new Date();
         const logEntry: LogEntry = {
           id: Date.now().toString(),
-          timestamp: new Date(),
+          timestamp: now,
           studentId: rfidInput,
           studentName: student.name,
           action,
+          late: isLate(now, action), // local check
         };
-
         setLogs((prev) => [logEntry, ...prev.slice(0, 19)]);
-        setLastActivityTime(new Date());
+        setLastActivityTime(now);
         setLastScannedId(rfidInput);
 
         toast.success(
           `${student.name} ${
             action === "check-in" ? "checked in" : "checked out"
-          } successfully`
+          }`
         );
         setRfidInput("");
       } catch (error) {
         toast.error(`Failed to ${action}`);
-        console.error(`Error during ${action}:`, error);
       } finally {
         setLoading(false);
       }
@@ -274,6 +317,7 @@ const LoggerSection = () => {
                     style={{
                       animationDelay: `${index * 50}ms`,
                       animationFillMode: "backwards",
+                      backgroundColor: log.suspicious ? "#ffe5e5" : undefined,
                     }}
                   >
                     <div className="flex-shrink-0">
@@ -296,6 +340,28 @@ const LoggerSection = () => {
                         >
                           {log.action === "check-in" ? "Check In" : "Check Out"}
                         </Badge>
+                        {log.suspicious && (
+                          <Badge
+                            variant="destructive"
+                            className="text-xs ml-2"
+                            style={{ backgroundColor: "#ff4d4d" }}
+                          >
+                            Proxy Attempt
+                          </Badge>
+                        )}
+                        {/* Highlight late arrivals */}
+                        {log.late && (
+                          <Badge
+                            variant="destructive"
+                            className="text-xs ml-2"
+                            style={{
+                              backgroundColor: "#faad14",
+                              color: "black",
+                            }}
+                          >
+                            Late
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <p className="text-xs text-muted-foreground">
