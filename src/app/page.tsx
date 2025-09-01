@@ -68,10 +68,8 @@ export default function Page() {
         <div className="md:hidden fixed top-2 left-2 z-[100]">
           <SidebarTrigger />
         </div>
-
-        {/* Sidebar (responsive) */}
+        {/* Sidebar (desktop and mobile overlay) */}
         <Sidebar />
-
         {/* Main content */}
         <div className="flex-1 flex flex-col md:ml-64 min-h-screen">
           <TopHeader />
