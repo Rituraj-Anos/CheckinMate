@@ -121,7 +121,9 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `attendance-${new Date().toISOString().split("T")[0]}.csv`;
+      link.download = `attendance-${
+        new Date().toISOString().split("T")[0]
+      }.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -186,30 +188,40 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "present": return "border-l-success bg-success/5 text-success";
-      case "absent": return "border-l-destructive bg-destructive/5 text-destructive";
-      case "late": return "border-l-yellow-500 bg-yellow-50 text-yellow-700";
-      default: return "border-l-muted bg-muted/5";
+      case "present":
+        return "border-l-success bg-success/5 text-success";
+      case "absent":
+        return "border-l-destructive bg-destructive/5 text-destructive";
+      case "late":
+        return "border-l-yellow-500 bg-yellow-50 text-yellow-700";
+      default:
+        return "border-l-muted bg-muted/5";
     }
   };
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
-      case "present": return "default";
-      case "absent": return "destructive";
-      case "late": return "secondary";
-      default: return "outline";
+      case "present":
+        return "default";
+      case "absent":
+        return "destructive";
+      case "late":
+        return "secondary";
+      default:
+        return "outline";
     }
   };
 
   return (
-    <div className={className}>
-      <Card className="w-full">
+    <div className={`${className} w-full max-w-5xl mx-auto p-2 md:p-0`}>
+      <Card className="w-full md:rounded-lg overflow-hidden shadow">
         <CardHeader className="pb-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-bold">Daily Attendance Details</h2>
-              <p className="text-muted-foreground mt-1">
+              <h2 className="text-xl md:text-2xl font-bold">
+                Daily Attendance Details
+              </h2>
+              <p className="text-muted-foreground mt-1 text-sm md:text-base">
                 Monitor and manage today's attendance records
               </p>
             </div>
@@ -228,7 +240,7 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
               <Button
                 onClick={handleExportCSV}
                 disabled={exporting || filteredStudents.length === 0}
-                className="rounded-full px-6"
+                className="rounded-full px-6 whitespace-nowrap"
               >
                 <Download className="w-4 h-4 mr-2" />
                 {exporting ? "Exporting..." : "Export Today"}
@@ -274,9 +286,9 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader className="sticky top-0 bg-card">
+            <div className="overflow-x-auto w-full">
+              <Table className="min-w-[640px]">
+                <TableHeader className="sticky top-0 bg-card z-10">
                   <TableRow>
                     <TableHead>RFID</TableHead>
                     <TableHead>Name</TableHead>
@@ -295,8 +307,12 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
                         ${getStatusColor(student.status)}
                       `}
                     >
-                      <TableCell className="font-mono text-sm">{student.rfid}</TableCell>
-                      <TableCell className="font-medium">{student.name}</TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {student.rfid}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {student.name}
+                      </TableCell>
                       <TableCell>{student.checkInTime || "-"}</TableCell>
                       <TableCell>{student.checkOutTime || "-"}</TableCell>
                       <TableCell>
