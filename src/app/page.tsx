@@ -64,13 +64,10 @@ export default function Page() {
   return (
     <SidebarProvider>
       <div className="min-h-screen bg-background flex">
-        {/* Hamburger trigger for mobile */}
         <div className="md:hidden fixed top-2 left-2 z-[100]">
           <SidebarTrigger />
         </div>
-        {/* Sidebar (desktop and mobile overlay) */}
         <Sidebar />
-        {/* Main content */}
         <div className="flex-1 flex flex-col md:ml-64 min-h-screen">
           <TopHeader />
           <main className="flex-1 px-4 md:px-6 lg:px-8 py-6">
