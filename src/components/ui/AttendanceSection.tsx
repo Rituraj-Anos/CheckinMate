@@ -39,6 +39,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { onSnapshot, collection, getDocs } from "firebase/firestore";
 
 interface Student {
   id: string;
@@ -83,93 +84,101 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
     ].join("-");
   }, []);
 
-  const fetchAttendance = async () => {
+  // Firestore real-time listener
+  useEffect(() => {
+    let unsubscribeScans: (() => void) | null = null;
     setLoading(true);
-    try {
-      const { collection, getDocs } = await import("firebase/firestore");
+    let studentsList: Student[] = [];
+
+    (async () => {
       const { db } = await import("@/lib/firebase");
-
-      if (!db) {
-        throw new Error("Firebase not initialized");
-      }
-
+      if (!db) throw new Error("Firebase not initialized");
       const studentSnapshot = await getDocs(collection(db, "students"));
-      const studentList = studentSnapshot.docs.map((doc) => {
+      studentsList = studentSnapshot.docs.map((doc) => {
         const data = doc.data();
         return {
           id: doc.id,
           rfid: data.rfid || "",
           name: data.name || "Unknown",
+          status: "absent",
         };
       });
 
-      const scansSnapshot = await getDocs(collection(db, "scans"));
-      const scanLogs: ScanLog[] = scansSnapshot.docs
-        .map((doc) => {
-          const data = doc.data();
-          return {
-            uid: data.uid || "",
-            action: data.action || "check-in",
-            timestamp: data.timestamp || Date.now(),
-            late: data.late || false,
-          };
-        })
-        .filter((log) => {
-          const logDate = new Date(log.timestamp);
-          const y = logDate.getFullYear();
-          const m = (logDate.getMonth() + 1).toString().padStart(2, "0");
-          const d = logDate.getDate().toString().padStart(2, "0");
-          const logDay = `${y}-${m}-${d}`;
-          return logDay === todayDate;
-        });
+      unsubscribeScans = onSnapshot(
+        collection(db, "scans"),
+        (scansSnapshot) => {
+          const scanLogs: ScanLog[] = scansSnapshot.docs
+            .map((doc) => {
+              const data = doc.data();
+              return {
+                uid: String(data.uid || ""),
+                action: data.action || "check-in",
+                timestamp: data.timestamp || Date.now(),
+                late: data.late || false,
+              };
+            })
+            .filter((log) => {
+              const logDate = new Date(log.timestamp);
+              const y = logDate.getFullYear();
+              const m = (logDate.getMonth() + 1).toString().padStart(2, "0");
+              const d = logDate.getDate().toString().padStart(2, "0");
+              const logDay = `${y}-${m}-${d}`;
+              return logDay === todayDate;
+            });
 
-      const studentsWithAttendance: Student[] = studentList.map((student) => {
-        const studentLogs = scanLogs.filter(
-          (scan) => scan.uid === student.rfid
-        );
-        const checkIn = studentLogs.find((s) => s.action === "check-in");
-        const checkOut = studentLogs.find((s) => s.action === "check-out");
+          const studentsWithAttendance: Student[] = studentsList.map(
+            (student) => {
+              const studentLogs = scanLogs.filter(
+                (scan) => String(scan.uid) === String(student.rfid)
+              );
+              const checkIn = studentLogs
+                .filter((s) => s.action === "check-in")
+                .sort((a, b) => b.timestamp - a.timestamp)[0];
+              const checkOut = studentLogs
+                .filter((s) => s.action === "check-out")
+                .sort((a, b) => b.timestamp - a.timestamp)[0];
 
-        let status: Student["status"] = "absent";
-        if (checkIn && checkIn.late) status = "late";
-        else if (checkIn) status = "present";
+              let status: Student["status"] = "absent";
+              if (checkIn && checkIn.late) status = "late";
+              else if (checkIn) status = "present";
 
-        return {
-          ...student,
-          checkInTime: checkIn
-            ? new Date(checkIn.timestamp).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : undefined,
-          checkOutTime: checkOut
-            ? new Date(checkOut.timestamp).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : undefined,
-          status,
-        };
-      });
+              return {
+                ...student,
+                checkInTime: checkIn
+                  ? new Date(checkIn.timestamp).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : undefined,
+                checkOutTime: checkOut
+                  ? new Date(checkOut.timestamp).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : undefined,
+                status,
+              };
+            }
+          );
 
-      setStudents(studentsWithAttendance);
-    } catch (error) {
-      console.error("Error fetching attendance:", error);
-      toast.error("Failed to load attendance data");
-    } finally {
-      setLoading(false);
-    }
-  };
+          setStudents(studentsWithAttendance);
+          setLoading(false);
+        }
+      );
+    })();
 
-  useEffect(() => {
-    fetchAttendance();
+    return () => {
+      if (unsubscribeScans) unsubscribeScans();
+    };
   }, [todayDate]);
 
+  // Filtering
   const filteredStudents = useMemo(() => {
     if (statusFilter === "all") return students;
     return students.filter((s) => s.status === statusFilter);
   }, [students, statusFilter]);
 
+  // CSV Export
   const handleExportCSV = async () => {
     setExporting(true);
     try {
@@ -201,6 +210,7 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
     }
   };
 
+  // Manual Check-In
   const handleCheckIn = async (student: Student) => {
     setCheckingIn(student.id);
     try {
@@ -218,7 +228,6 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
             result.suspicious ? " (Flagged as suspicious!)" : ""
           }${result.late ? " (Marked as late!)" : ""}`
         );
-        await fetchAttendance();
       } else {
         toast.error(`Failed to check in: ${result.error || "Unknown error"}`);
       }
@@ -229,6 +238,7 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
     }
   };
 
+  // Edit and Delete Dialog Handlers (unchanged)
   const handleEdit = (student: Student) => {
     setStudentToEdit(student);
     setEditForm({ name: student.name, rfid: student.rfid });
@@ -240,24 +250,18 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
       toast.error("Please fill in all fields");
       return;
     }
-
     setEditing(true);
     try {
       const { doc, updateDoc, collection, getDocs, query, where } =
         await import("firebase/firestore");
       const { db } = await import("@/lib/firebase");
+      if (!db) throw new Error("Firebase not initialized");
 
-      if (!db) {
-        throw new Error("Firebase not initialized");
-      }
-
-      // Update student record
       await updateDoc(doc(db, "students", studentToEdit.id), {
         name: editForm.name.trim(),
         rfid: editForm.rfid.trim(),
       });
 
-      // If RFID changed, update all scan records
       if (editForm.rfid !== studentToEdit.rfid) {
         const scansQuery = query(
           collection(db, "scans"),
@@ -270,9 +274,7 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
         );
         await Promise.all(updatePromises);
       }
-
       toast.success(`${editForm.name} updated successfully!`);
-      await fetchAttendance();
     } catch (error) {
       console.error("Error updating student:", error);
       toast.error("Failed to update student");
@@ -290,32 +292,24 @@ const AttendanceSection = ({ className }: AttendanceSectionProps) => {
 
   const handleDeleteConfirm = async () => {
     if (!studentToDelete) return;
-
     setDeleting(true);
     try {
       const { collection, getDocs, deleteDoc, doc, query, where } =
         await import("firebase/firestore");
       const { db } = await import("@/lib/firebase");
-
-      if (!db) {
-        throw new Error("Firebase not initialized");
-      }
+      if (!db) throw new Error("Firebase not initialized");
 
       await deleteDoc(doc(db, "students", studentToDelete.id));
-
       const scansQuery = query(
         collection(db, "scans"),
         where("uid", "==", studentToDelete.rfid)
       );
       const scansSnapshot = await getDocs(scansQuery);
-
       const deletePromises = scansSnapshot.docs.map((scanDoc) =>
         deleteDoc(scanDoc.ref)
       );
       await Promise.all(deletePromises);
-
       toast.success(`${studentToDelete.name} has been removed from the system`);
-      await fetchAttendance();
     } catch (error) {
       console.error("Error deleting student:", error);
       toast.error("Failed to delete student");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -14,34 +14,51 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MonitorDot, IdCard, Clock, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
+import { collection, getDocs, addDoc } from "firebase/firestore";
 
-const mockStudents = [
-  { id: "STU001", name: "Alice Johnson" },
-  { id: "STU002", name: "Bob Smith" },
-  { id: "STU003", name: "Carol Williams" },
-  { id: "STU004", name: "David Brown" },
-  { id: "STU005", name: "Emma Davis" },
-];
-
-const CLASS_START_HOUR = 9;
-const CLASS_START_MINUTE = 45;
-
+interface Student {
+  rfid: string;
+  name: string;
+}
 interface LogEntry {
   id: string;
   timestamp: Date;
-  studentId: string;
+  studentRfid: string;
   studentName: string;
   action: "check-in" | "check-out";
   suspicious?: boolean;
   late?: boolean;
 }
 
+const CLASS_START_HOUR = 9;
+const CLASS_START_MINUTE = 45;
+
 const LoggerSection = () => {
   const [rfidInput, setRfidInput] = useState("");
-  const [lastScannedId, setLastScannedId] = useState("");
+  const [lastScannedRfid, setLastScannedRfid] = useState("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [students, setStudents] = useState<Student[]>([]);
+
+  // Fetch students from Firestore
+  useEffect(() => {
+    async function fetchStudents() {
+      try {
+        const { db } = await import("@/lib/firebase");
+        if (!db) return;
+        const studentSnapshot = await getDocs(collection(db, "students"));
+        const studentList = studentSnapshot.docs.map((doc) => {
+          const data = doc.data();
+          return { rfid: data.rfid, name: data.name || "Unknown" };
+        });
+        setStudents(studentList);
+      } catch (e) {
+        toast.error("Failed to load students");
+      }
+    }
+    fetchStudents();
+  }, []);
 
   const isLate = (timestamp: Date, action: "check-in" | "check-out") => {
     if (action !== "check-in") return false;
@@ -53,29 +70,45 @@ const LoggerSection = () => {
   };
 
   const generateRandomStudent = useCallback(() => {
-    const randomStudent =
-      mockStudents[Math.floor(Math.random() * mockStudents.length)];
-    setRfidInput(randomStudent.id);
-    setLastScannedId(randomStudent.id);
-    toast.success("Random student ID generated");
-  }, []);
+    if (!students.length) {
+      toast.error("No students loaded");
+      return;
+    }
+    const randomStudent = students[Math.floor(Math.random() * students.length)];
+    setRfidInput(randomStudent.rfid);
+    setLastScannedRfid(randomStudent.rfid);
+    toast.success(`Random student selected: ${randomStudent.name}`);
+  }, [students]);
 
   const logAttendance = useCallback(
     async (action: "check-in" | "check-out") => {
       if (!rfidInput.trim()) {
-        toast.error("Please enter an RFID");
+        toast.error("Please enter or select a RFID");
         return;
       }
-
-      const student = mockStudents.find((s) => s.id === rfidInput) || {
-        name: "Unknown Student",
-      };
-
-      if (action === "check-in") {
-        setIsCheckingIn(true);
-      } else {
-        setIsCheckingOut(true);
+      // Check Firestore students for this RFID
+      let student = students.find((s) => s.rfid === rfidInput);
+      if (!student) {
+        const { db } = await import("@/lib/firebase");
+        if (!db) {
+          toast.error("DB error");
+          return;
+        }
+        await addDoc(collection(db, "students"), {
+          name: "Unknown Student",
+          rfid: rfidInput,
+          createdAt: new Date().toISOString(),
+        });
+        // Update local state immediately to show new student in dropdowns/activity
+        setStudents((prev) => [
+          { rfid: rfidInput, name: "Unknown Student" },
+          ...prev,
+        ]);
+        student = { rfid: rfidInput, name: "Unknown Student" };
+        toast.success("New student added automatically!");
       }
+      if (action === "check-in") setIsCheckingIn(true);
+      else setIsCheckingOut(true);
 
       try {
         const response = await fetch("/api/scan", {
@@ -91,7 +124,7 @@ const LoggerSection = () => {
           const newLog: LogEntry = {
             id: Date.now().toString(),
             timestamp: now,
-            studentId: rfidInput,
+            studentRfid: rfidInput,
             studentName: student.name,
             action,
             suspicious: result.suspicious,
@@ -99,15 +132,14 @@ const LoggerSection = () => {
           };
 
           setLogs((prev) => [newLog, ...prev.slice(0, 19)]);
-          setLastScannedId(rfidInput);
-
+          setLastScannedRfid(rfidInput);
           toast.success(
             `${student.name} ${
               action === "check-in" ? "checked in" : "checked out"
             }${result.suspicious ? " (Flagged as suspicious!)" : ""}`
           );
-
           setRfidInput("");
+          window.dispatchEvent(new Event("attendance-update"));
         } else {
           toast.error(
             `Failed to ${action}: ${result.error || "Unknown error"}`
@@ -120,29 +152,27 @@ const LoggerSection = () => {
         setIsCheckingOut(false);
       }
     },
-    [rfidInput]
+    [rfidInput, students]
   );
 
   const handleCheckIn = () => logAttendance("check-in");
   const handleCheckOut = () => logAttendance("check-out");
 
-  const getInitials = (name: string) => {
-    return name
+  const getInitials = (name: string) =>
+    name
       .split(" ")
       .map((word) => word[0])
       .join("")
       .toUpperCase()
       .slice(0, 2);
-  };
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString("en-US", {
+  const formatTime = (date: Date) =>
+    date.toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
       hour12: true,
     });
-  };
 
   return (
     <div className="space-y-6">
@@ -180,20 +210,29 @@ const LoggerSection = () => {
                       handleCheckIn();
                     }
                   }}
+                  list="students-list"
                 />
+                <datalist id="students-list">
+                  {students.map((student) => (
+                    <option value={student.rfid} key={student.rfid}>
+                      {student.name} ({student.rfid})
+                    </option>
+                  ))}
+                </datalist>
               </div>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={generateRandomStudent}
                 className="whitespace-nowrap"
+                disabled={!students.length}
               >
                 Random Student
               </Button>
             </div>
-            {lastScannedId && (
+            {lastScannedRfid && (
               <p className="text-xs text-muted-foreground">
-                Last scanned: {lastScannedId}
+                Last scanned RFID: {lastScannedRfid}
               </p>
             )}
           </div>
@@ -304,7 +343,7 @@ const LoggerSection = () => {
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <p className="text-xs text-muted-foreground">
-                          ID: {log.studentId}
+                          RFID: {log.studentRfid}
                         </p>
                         <span className="text-xs text-muted-foreground">•</span>
                         <p className="text-xs text-muted-foreground">
