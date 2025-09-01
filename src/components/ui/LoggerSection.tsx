@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -15,7 +15,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { MonitorDot, IdCard, Clock, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 
-// Mock data for students (would normally come from Firebase)
 const mockStudents = [
   { id: "STU001", name: "Alice Johnson" },
   { id: "STU002", name: "Bob Smith" },
@@ -34,75 +33,24 @@ interface LogEntry {
   studentName: string;
   action: "check-in" | "check-out";
   suspicious?: boolean;
-  late?: boolean; // <-- new for late highlight
+  late?: boolean;
 }
 
 const LoggerSection = () => {
   const [rfidInput, setRfidInput] = useState("");
   const [lastScannedId, setLastScannedId] = useState("");
-  const [detectorStatus, setDetectorStatus] = useState<"active" | "idle">(
-    "idle"
-  );
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
-  const [lastActivityTime, setLastActivityTime] = useState<Date | null>(null);
 
-  // Helper: check for late arrival (after 9:45 AM)
   const isLate = (timestamp: Date, action: "check-in" | "check-out") => {
-    if (action !== "check-in") return false; // Only check-ins count
-    const classStart = new Date(timestamp);
-    classStart.setHours(CLASS_START_HOUR, CLASS_START_MINUTE, 0, 0);
-    // If timestamp is after today at class start time, and on same date
+    if (action !== "check-in") return false;
     return (
       timestamp.getHours() > CLASS_START_HOUR ||
       (timestamp.getHours() === CLASS_START_HOUR &&
         timestamp.getMinutes() > CLASS_START_MINUTE)
     );
   };
-
-  // Live scan event stream from API
-  useEffect(() => {
-    const evtSource = new EventSource("/api/scan");
-    evtSource.onmessage = (e) => {
-      try {
-        const { uid, action, timestamp, suspicious } = JSON.parse(e.data);
-        const student = mockStudents.find((s) => s.id === uid) || {
-          name: "Unknown Student",
-        };
-        const logTime = new Date(timestamp);
-        const newLog: LogEntry = {
-          id: String(timestamp),
-          timestamp: logTime,
-          studentId: uid,
-          studentName: student.name,
-          action,
-          suspicious,
-          late: isLate(logTime, action), // mark late if after 9:45
-        };
-        setLogs((prev) => [newLog, ...prev.slice(0, 19)]);
-        setLastScannedId(uid);
-        setLastActivityTime(new Date(timestamp));
-        toast.success(
-          `${student.name} ${
-            action === "check-in" ? "checked in" : "checked out"
-          } (LIVE)`
-        );
-      } catch {}
-    };
-    return () => evtSource.close();
-  }, []);
-
-  // Simulated detector status update
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (lastActivityTime) {
-        const timeDiff = Date.now() - lastActivityTime.getTime();
-        setDetectorStatus(timeDiff < 10000 ? "active" : "idle");
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [lastActivityTime]);
 
   const generateRandomStudent = useCallback(() => {
     const randomStudent =
@@ -112,52 +60,64 @@ const LoggerSection = () => {
     toast.success("Random student ID generated");
   }, []);
 
-  // Old logAttendance for manual/button use
   const logAttendance = useCallback(
     async (action: "check-in" | "check-out") => {
       if (!rfidInput.trim()) {
         toast.error("Please enter an RFID");
         return;
       }
-      const isCheckIn = action === "check-in";
-      const setLoading = isCheckIn ? setIsCheckingIn : setIsCheckingOut;
-      setLoading(true);
+
+      const student = mockStudents.find((s) => s.id === rfidInput) || {
+        name: "Unknown Student",
+      };
+
+      if (action === "check-in") {
+        setIsCheckingIn(true);
+      } else {
+        setIsCheckingOut(true);
+      }
 
       try {
-        // Post to /api/scan for live logging (sends to all connected)
-        const res = await fetch("/api/scan", {
+        const response = await fetch("/api/scan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ uid: rfidInput, action }),
         });
-        if (!res.ok) throw new Error("Failed to send scan");
-        // For immediate feedback, also add locally:
-        const student = mockStudents.find((s) => s.id === rfidInput) || {
-          name: "Unknown Student",
-        };
-        const now = new Date();
-        const logEntry: LogEntry = {
-          id: Date.now().toString(),
-          timestamp: now,
-          studentId: rfidInput,
-          studentName: student.name,
-          action,
-          late: isLate(now, action), // local check
-        };
-        setLogs((prev) => [logEntry, ...prev.slice(0, 19)]);
-        setLastActivityTime(now);
-        setLastScannedId(rfidInput);
 
-        toast.success(
-          `${student.name} ${
-            action === "check-in" ? "checked in" : "checked out"
-          }`
-        );
-        setRfidInput("");
+        const result = await response.json();
+
+        if (result.ok) {
+          const now = new Date();
+          const newLog: LogEntry = {
+            id: Date.now().toString(),
+            timestamp: now,
+            studentId: rfidInput,
+            studentName: student.name,
+            action,
+            suspicious: result.suspicious,
+            late: isLate(now, action),
+          };
+
+          setLogs((prev) => [newLog, ...prev.slice(0, 19)]);
+          setLastScannedId(rfidInput);
+
+          toast.success(
+            `${student.name} ${
+              action === "check-in" ? "checked in" : "checked out"
+            }${result.suspicious ? " (Flagged as suspicious!)" : ""}`
+          );
+
+          setRfidInput("");
+        } else {
+          toast.error(
+            `Failed to ${action}: ${result.error || "Unknown error"}`
+          );
+        }
       } catch (error) {
-        toast.error(`Failed to ${action}`);
+        toast.error(`Network error during ${action}`);
       } finally {
-        setLoading(false);
+        setIsCheckingIn(false);
+        setIsCheckingOut(false);
       }
     },
     [rfidInput]
@@ -191,36 +151,18 @@ const LoggerSection = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <MonitorDot
-                  className={`h-8 w-8 transition-colors duration-300 ${
-                    detectorStatus === "active"
-                      ? "text-green-600 animate-pulse"
-                      : "text-muted-foreground"
-                  }`}
-                />
-                {detectorStatus === "active" && (
-                  <div className="absolute -inset-1 rounded-full bg-green-100 animate-ping opacity-75 motion-reduce:animate-none" />
-                )}
+                <MonitorDot className="h-8 w-8 text-muted-foreground" />
               </div>
               <div>
                 <CardTitle className="text-lg font-semibold">
-                  Live RFID Detector
+                  RFID Scanner
                 </CardTitle>
                 <CardDescription className="text-sm">
-                  Scan student cards for instant attendance logging
+                  Scan student cards for attendance logging
                 </CardDescription>
               </div>
             </div>
-            <Badge
-              variant={detectorStatus === "active" ? "default" : "secondary"}
-              className={`transition-colors duration-300 ${
-                detectorStatus === "active"
-                  ? "bg-green-100 text-green-800 border-green-200"
-                  : ""
-              }`}
-            >
-              {detectorStatus === "active" ? "Active" : "Idle"}
-            </Badge>
+            <Badge variant="secondary">Ready</Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -293,10 +235,10 @@ const LoggerSection = () => {
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-muted-foreground" />
             <CardTitle className="text-lg font-semibold">
-              Real-time Logs
+              Activity Logs
             </CardTitle>
           </div>
-          <CardDescription>Live attendance activity feed</CardDescription>
+          <CardDescription>Recent attendance activity</CardDescription>
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[400px] pr-4">
@@ -305,7 +247,7 @@ const LoggerSection = () => {
                 <Clock className="h-12 w-12 text-muted-foreground/50 mb-3" />
                 <p className="text-muted-foreground font-medium">No logs yet</p>
                 <p className="text-sm text-muted-foreground">
-                  Attendance logs will appear here in real-time
+                  Attendance logs will appear here after scanning
                 </p>
               </div>
             ) : (
@@ -313,10 +255,8 @@ const LoggerSection = () => {
                 {logs.map((log, index) => (
                   <div
                     key={log.id}
-                    className="flex items-center gap-3 p-3 rounded-lg border bg-card transition-all duration-300 animate-in slide-in-from-top-2 fade-in-0"
+                    className="flex items-center gap-3 p-3 rounded-lg border bg-card transition-all duration-300"
                     style={{
-                      animationDelay: `${index * 50}ms`,
-                      animationFillMode: "backwards",
                       backgroundColor: log.suspicious ? "#ffe5e5" : undefined,
                     }}
                   >
@@ -349,7 +289,6 @@ const LoggerSection = () => {
                             Proxy Attempt
                           </Badge>
                         )}
-                        {/* Highlight late arrivals */}
                         {log.late && (
                           <Badge
                             variant="destructive"
